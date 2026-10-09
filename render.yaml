@@ -1,12 +1,13 @@
-# Optional: deploy the FastAPI backend to Render (free web service, Docker runtime).
-# SQLite lives on the container filesystem — demo data resets on redeploy.
 services:
   - type: web
     name: vajra-ai-backend
     runtime: docker
-    rootDir: backend
-    dockerfilePath: ./Dockerfile
+    plan: free
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
     healthCheckPath: /health
     envVars:
       - key: APP_ENV
         value: demo
+      - key: SQLITE_PATH
+        value: /tmp/vajra.db

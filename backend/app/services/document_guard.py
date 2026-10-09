@@ -101,7 +101,7 @@ def scan_text(text: str) -> dict:
     for m in URL_RE.finditer(text):
         url = m.group(0)
         host = re.sub(r"^https?://", "", url, flags=re.IGNORECASE).split("/")[0].split(":")[0].lower()
-        shown = f"{url[:8]}{host}/…" if len(url) > len(host) + 9 else url
+        shown = f"{url[:url.index('://') + 3]}{host}/…" if len(url) > len(host) + 9 else url
         if re.fullmatch(r"[\d.]+", host):
             add(Finding("risky_url", "elevated", shown, "Link points to a raw IP address instead of a named host."))
         elif host in URL_SHORTENERS:
