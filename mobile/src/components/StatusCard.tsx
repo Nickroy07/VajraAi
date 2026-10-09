@@ -1,8 +1,17 @@
 import { PropsWithChildren } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 
-export function StatusCard({ children }: PropsWithChildren) {
-  return <View style={styles.card}>{children}</View>;
+type StatusCardProps = PropsWithChildren<{ online?: boolean }>;
+
+export function StatusCard({ children, online }: StatusCardProps) {
+  return (
+    <View style={styles.card}>
+      {typeof online === 'boolean' && (
+        <StatusLine label="Backend" value={online ? 'Online' : 'Offline'} />
+      )}
+      {children}
+    </View>
+  );
 }
 
 export function StatusLine({ label, value }: { label: string; value: string }) {

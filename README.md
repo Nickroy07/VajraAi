@@ -64,6 +64,12 @@ cd dashboard
 npm run dev
 ```
 
+Dashboard backend URL override:
+```bash
+cd dashboard
+VITE_BACKEND_BASE_URL=http://localhost:8000 npm run dev
+```
+
 Mobile:
 ```bash
 cd mobile
@@ -91,6 +97,23 @@ Mobile TypeScript check:
 ```bash
 cd mobile && npm run typecheck
 ```
+
+## GitHub Pages Deployment (Dashboard)
+
+The dashboard is deployed as a static site with GitHub Pages. The backend is **not** hosted by Pages and must be deployed separately.
+
+Expected Pages URL for this repository:
+- `https://nickroy07.github.io/VajraAi/`
+
+Setup steps:
+1. In GitHub, open **Settings → Pages** and set **Source** to **GitHub Actions**.
+2. Ensure your backend is reachable from the browser and set `VITE_BACKEND_BASE_URL` for production (for example with repository Actions variables/secrets consumed by workflow updates, if needed).
+3. Push to `main` or run the **Dashboard Pages** workflow manually (`workflow_dispatch`).
+
+Notes:
+- The dashboard build uses Vite base `/VajraAi/` for production builds and `/` for local development.
+- Runtime API calls use `VITE_BACKEND_BASE_URL` (fallback: `VITE_API_BASE_URL`, then `http://localhost:8000`).
+- This repository still contains demo/security limitations; it is not a fully production-ready security gateway yet.
 
 ## Branching Strategy
 
