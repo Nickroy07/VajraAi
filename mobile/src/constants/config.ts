@@ -7,3 +7,5 @@ const DEFAULT_URL = Platform.select({
 
 export const API_BASE_URL =
   process.env.EXPO_PUBLIC_API_BASE_URL ?? DEFAULT_URL;
+
+export const BACKEND_BASE_URL = API_BASE_URL;
