@@ -1,73 +1,100 @@
-import { useEffect, useState } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
-import { StatusCard } from '../src/components/StatusCard';
+import { useCallback, useEffect, useState } from 'react';
+import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Link } from 'expo-router';
+import { StatusCard, StatusLine } from '../src/components/StatusCard';
+import { Card, Demo, ErrorBox, colors, screen } from '../src/components/ui';
+import { API_BASE_URL } from '../src/constants/config';
 import { api } from '../src/services/api';
-import type { HealthResponse } from '../src/types/health';
+import type { OverviewResponse } from '../src/types/api';
+
+const SHORTCUTS = [
+  { href: '/document-guard', label: 'Document Guard', desc: 'Scan text before an agent reads it' },
+  { href: '/approvals', label: 'Approvals', desc: 'Approve or reject exact actions' },
+  { href: '/events', label: 'Events', desc: 'Persisted gateway decisions' },
+  { href: '/tasks', label: 'Tasks', desc: 'Scopes the agent works within' },
+] as const;
 
 export default function HomeScreen() {
-  const [health, setHealth] = useState<HealthResponse | null>(null);
-  const [overview, setOverview] = useState<any>(null);
+  const [overview, setOverview] = useState<OverviewResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
 
-  useEffect(() => {
-    api.getHealth()
-      .then((h) => {
-        setHealth(h);
-        return api.getOverview();
-      })
-      .then(setOverview)
-      .catch((e) => setError(e.message));
+  const load = useCallback(async () => {
+    try {
+      setOverview(await api.getOverview());
+      setError(null);
+    } catch (e) {
+      setOverview(null);
+      setError(e instanceof Error ? e.message : 'Unknown error');
+    }
   }, []);
 
-  if (error) {
-    return (
-      <View style={styles.container}>
-        <Text style={styles.title}>VAJRA AI</Text>
-        <StatusCard online={false} />
-        <Text style={styles.error}>Disconnected: {error}</Text>
-      </View>
-    );
-  }
+  useEffect(() => {
+    load();
+    const id = setInterval(load, 10000);
+    return () => clearInterval(id);
+  }, [load]);
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await load();
+    setRefreshing(false);
+  };
+
+  const metric = (label: string) => overview?.metrics.find((m) => m.label === label)?.value ?? 0;
 
   return (
-    <ScrollView style={styles.container}>
-      <Text style={styles.title}>VAJRA AI</Text>
-      <StatusCard online={!!health} />
-      <Text style={styles.demo}>DEMO ENVIRONMENT</Text>
+    <ScrollView
+      style={screen.container}
+      contentContainerStyle={screen.content}
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+    >
+      <Text style={screen.subtitle}>Let AI work. Never let it overstep.</Text>
+      <StatusCard online={!!overview}>
+        <StatusLine label="Mode" value={overview ? 'DEMO gateway enforcing' : 'Not connected'} />
+        <StatusLine label="Active task" value={overview?.active_task?.description ?? '—'} />
+        <StatusLine label="Server" value={API_BASE_URL} />
+      </StatusCard>
+      <Demo />
+      {error && <ErrorBox message={error} />}
 
       {overview && (
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Overview</Text>
-          <Text style={styles.mode}>Mode: {overview.mode}</Text>
-          <View style={styles.metrics}>
-            {overview.metrics?.map((m: any) => (
-              <View key={m.label} style={styles.metricCard}>
-                <Text style={styles.metricValue}>{m.value}</Text>
-                <Text style={styles.metricLabel}>{m.label}</Text>
-              </View>
-            ))}
-          </View>
+        <View style={styles.metrics}>
+          <Metric label="Allowed" value={metric('Allowed')} color={colors.allow} />
+          <Metric label="Blocked" value={metric('Blocked')} color={colors.deny} />
+          <Metric label="Pending" value={metric('Pending Approvals')} color={colors.amber} />
         </View>
       )}
 
-      {overview?.attention_items?.map((item: string, i: number) => (
-        <Text key={i} style={styles.attention}>{item}</Text>
+      {SHORTCUTS.map((s) => (
+        <Link key={s.href} href={s.href} asChild>
+          <Pressable accessibilityRole="button">
+            <Card>
+              <Text style={screen.cardTitle}>{s.label} ›</Text>
+              <Text style={screen.subtitle}>{s.desc}</Text>
+            </Card>
+          </Pressable>
+        </Link>
       ))}
+      <Text style={screen.mono}>
+        Protects only actions sent through this gateway. It does not intercept the ChatGPT app or other third-party AI apps.
+      </Text>
     </ScrollView>
   );
 }
 
+function Metric({ label, value, color }: { label: string; value: number; color: string }) {
+  return (
+    <View style={styles.metric}>
+      <Text style={[styles.metricValue, { color }]}>{value}</Text>
+      <Text style={styles.metricLabel}>{label}</Text>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F8FAFC', padding: 16 },
-  title: { fontSize: 24, fontWeight: '700', color: '#090D16', marginBottom: 8 },
-  error: { color: '#DC2626', marginTop: 16 },
-  demo: { fontSize: 11, color: '#D97706', fontWeight: '700', marginBottom: 16 },
-  section: { marginVertical: 12 },
-  sectionTitle: { fontSize: 16, fontWeight: '600', marginBottom: 8 },
-  mode: { fontSize: 13, color: '#64748B' },
-  metrics: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8 },
-  metricCard: { backgroundColor: '#FFF', borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 8, padding: 12, minWidth: 80 },
-  metricValue: { fontSize: 24, fontWeight: '700', color: '#4F46E5' },
-  metricLabel: { fontSize: 11, color: '#64748B' },
-  attention: { fontSize: 12, color: '#92400E', backgroundColor: '#FFFBEB', padding: 8, borderRadius: 6, marginVertical: 4 },
+  metrics: { flexDirection: 'row', gap: 8 },
+  metric: { flex: 1, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, borderRadius: 12, padding: 12 },
+  metricValue: { fontSize: 26, fontWeight: '800' },
+  metricLabel: { fontSize: 12, color: colors.muted, fontWeight: '600' },
 });

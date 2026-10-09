@@ -15,27 +15,41 @@ import type {
   GatewayExecuteResponse,
   AttackLabResponse,
   ScenarioId,
+  DocumentScanResponse,
+  DocumentAgentRunResponse,
 } from '../types/api';
 
-class ApiError extends Error {
+export class ApiError extends Error {
   status: number;
   body: unknown;
-  constructor(status: number, body: unknown) {
-    super(`API error ${status}`);
+  constructor(status: number, message: string, body: unknown = null) {
+    super(message);
     this.status = status;
     this.body = body;
   }
 }
 
+function errorMessage(status: number, body: unknown): string {
+  const err = (body as { error?: { message?: string } } | null)?.error;
+  return err?.message ? `${err.message} (HTTP ${status})` : `Request failed (HTTP ${status})`;
+}
+
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
-  const url = `${BACKEND_BASE_URL}${path}`;
-  const res = await fetch(url, {
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
-    ...options,
-  });
+  if (BACKEND_BASE_URL === null) {
+    throw new ApiError(0, 'Backend not configured — set VITE_BACKEND_BASE_URL at build time.');
+  }
+  let res: Response;
+  try {
+    res = await fetch(`${BACKEND_BASE_URL}${path}`, {
+      ...options,
+      headers: { 'Content-Type': 'application/json', ...options?.headers },
+    });
+  } catch {
+    throw new ApiError(0, `Backend offline — could not reach ${BACKEND_BASE_URL}`);
+  }
   if (!res.ok) {
     const body = await res.json().catch(() => null);
-    throw new ApiError(res.status, body);
+    throw new ApiError(res.status, errorMessage(res.status, body), body);
   }
   return res.json() as Promise<T>;
 }
@@ -60,7 +74,7 @@ export const api = {
     }),
 
   getApprovals: (status = 'pending') =>
-    request<ApprovalList>(`/api/v1/approvals?status=${status}`),
+    request<ApprovalList>(`/api/v1/approvals?status=${encodeURIComponent(status)}`),
   decideApproval: (approvalId: string, decision: 'approve' | 'deny') =>
     request<ApprovalResponse>(`/api/v1/approvals/${approvalId}/decision`, {
       method: 'POST',
@@ -83,5 +97,16 @@ export const api = {
     request<AttackLabResponse>('/api/v1/attack-lab/run', {
       method: 'POST',
       body: JSON.stringify({ scenario_ids: scenarioIds }),
+    }),
+
+  scanDocument: (text: string) =>
+    request<DocumentScanResponse>('/api/v1/document-guard/scan', {
+      method: 'POST',
+      body: JSON.stringify({ text }),
+    }),
+  runDocumentAgent: (text: string) =>
+    request<DocumentAgentRunResponse>('/api/v1/document-guard/agent-run', {
+      method: 'POST',
+      body: JSON.stringify({ text }),
     }),
 };

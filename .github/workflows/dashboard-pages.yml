@@ -33,6 +33,10 @@ jobs:
       - name: TypeScript check
         run: npm run typecheck
       - name: Build dashboard
+        # Set the repository variable VITE_BACKEND_BASE_URL to a deployed backend.
+        # If unset, the site shows a "backend not configured" state.
+        env:
+          VITE_BACKEND_BASE_URL: ${{ vars.VITE_BACKEND_BASE_URL }}
         run: npm run build
       - name: Configure Pages
         uses: actions/configure-pages@v5

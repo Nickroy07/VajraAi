@@ -14,6 +14,9 @@ export interface OverviewResponse {
   gateway_connected: boolean;
   metrics: OverviewMetric[];
   recent_events: ApiEvent[];
+  active_task: { task_id: string; description: string; status: TaskStatus } | null;
+  last_attack_lab_event: ApiEvent | null;
+  executor_calls_total: number;
   attention_items: string[];
 }
 
@@ -134,15 +137,21 @@ export interface GatewayExecuteRequest {
   approval_id?: string;
 }
 
+export type GatewayAuthorization = 'allowed' | 'denied' | 'pending_approval';
+
 export interface GatewayExecuteResponse {
   event_id: string;
   task_id: string;
   tool_name: string;
-  authorization: string;
+  authorization: GatewayAuthorization;
   authorization_reason: string;
-  execution_status: string;
+  execution_status: ExecutionStatus;
   execution_result: string | null;
+  /** Mock-executor invocations caused by this request (0 or 1). */
   executor_call_count: number;
+  resource: string;
+  destination: string;
+  approval_id: string | null;
   timestamp: string;
 }
 
@@ -155,11 +164,16 @@ export interface TraceStage {
 export interface ScenarioResult {
   scenario_id: string;
   scenario_label: string;
-  final_authorization: string;
+  final_authorization: GatewayAuthorization;
   authorization_reason: string;
-  execution_status: string;
+  execution_status: ExecutionStatus;
+  /** Verified delta of the persisted mock-executor counter. */
   executor_call_count: number;
+  executor_calls_before: number;
+  executor_calls_after: number;
   event_id: string;
+  approval_id: string | null;
+  request: GatewayExecuteRequest;
   trace: TraceStage[];
 }
 
@@ -168,4 +182,34 @@ export interface AttackLabResponse {
   results: ScenarioResult[];
 }
 
-export type ScenarioId = 'authorized_invoice_read' | 'prompt_injection_email' | 'unauthorized_file_delete';
+export type ScenarioId =
+  | 'authorized_invoice_read'
+  | 'local_summary'
+  | 'prompt_injection_email'
+  | 'unauthorized_file_delete'
+  | 'approval_vendor_email';
+
+export type FindingSeverity = 'review' | 'elevated' | 'high';
+export type DocumentRiskLevel = 'no_signals' | FindingSeverity;
+
+export interface DocumentFinding {
+  type: string;
+  severity: FindingSeverity;
+  evidence: string;
+  explanation: string;
+}
+
+export interface DocumentScanResponse {
+  mode: string;
+  risk_level: DocumentRiskLevel;
+  findings: DocumentFinding[];
+  stats: { characters: number; lines: number; sha256_prefix: string };
+  disclaimer: string;
+}
+
+export interface DocumentAgentRunResponse {
+  mode: string;
+  scan: DocumentScanResponse;
+  agent_rationale: string;
+  result: ScenarioResult;
+}

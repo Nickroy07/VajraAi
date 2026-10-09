@@ -1,65 +1,116 @@
 import { useCallback, useEffect, useState } from 'react';
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Badge, Card, Demo, ErrorBox, Row, colors, screen } from '../src/components/ui';
 import { api } from '../src/services/api';
+import type { ApprovalResponse } from '../src/types/api';
+import { formatIso, timeUntil } from '../src/utils/time';
 
 export default function ApprovalsScreen() {
-  const [approvals, setApprovals] = useState<any[]>([]);
+  const [approvals, setApprovals] = useState<ApprovalResponse[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [msg, setMsg] = useState<string | null>(null);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const [loaded, setLoaded] = useState(false);
 
-  const load = useCallback(() => {
-    api.getApprovals('pending')
-      .then((d: any) => setApprovals(d.approvals))
-      .catch((e: Error) => setError(e.message));
+  const load = useCallback(async () => {
+    try {
+      setApprovals((await api.getApprovals('pending')).approvals);
+      setError(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Unknown error');
+    } finally {
+      setLoaded(true);
+    }
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    load();
+    const id = setInterval(load, 5000);
+    return () => clearInterval(id);
+  }, [load]);
 
-  const decide = (id: string, decision: 'approve' | 'deny') => {
-    api.decideApproval(id, decision)
-      .then(() => { setMsg(`Successfully ${decision}d`); load(); })
-      .catch((e: Error) => setMsg(`Failed: ${e.message}`));
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await load();
+    setRefreshing(false);
   };
 
-  if (error) return <View style={styles.container}><Text style={styles.error}>Error: {error}</Text></View>;
+  const decide = async (a: ApprovalResponse, decision: 'approve' | 'deny') => {
+    setBusyId(a.approval_id);
+    setMsg(null);
+    try {
+      const res = await api.decideApproval(a.approval_id, decision);
+      setMsg({ ok: decision === 'approve', text: `${decision === 'approve' ? 'Approved' : 'Rejected'} ${a.tool_name} → ${a.destination || a.resource}. Status: ${res.status}.` });
+    } catch (e) {
+      setMsg({ ok: false, text: e instanceof Error ? e.message : 'Decision failed' });
+    } finally {
+      setBusyId(null);
+      load();
+    }
+  };
 
   return (
-    <ScrollView style={styles.container}>
-      <Text style={styles.title}>Approvals</Text>
-      <Text style={styles.demo}>DEMO ENVIRONMENT</Text>
-      {msg && <Text style={styles.msg}>{msg}</Text>}
-      {approvals.length === 0 && <Text style={styles.empty}>No pending approvals</Text>}
-      {approvals.map((a: any) => (
-        <View key={a.approval_id} style={styles.card}>
-          <Text style={styles.cardTitle}>{a.tool_name}</Text>
-          <Text style={styles.mono}>Resource: {a.resource || '-'}</Text>
-          <Text>Reason: {a.reason || '-'}</Text>
+    <ScrollView
+      style={screen.container}
+      contentContainerStyle={screen.content}
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+    >
+      <Text style={screen.subtitle}>Each approval authorizes one exact action, once, before it expires.</Text>
+      <Demo />
+      {error && <ErrorBox message={error} />}
+      {msg && <Text style={[styles.msg, msg.ok ? styles.msgOk : styles.msgBad]}>{msg.text}</Text>}
+      {!loaded && <ActivityIndicator color={colors.primary} />}
+      {loaded && !error && approvals.length === 0 && (
+        <Text style={screen.empty}>No pending approvals. Run “Vendor email (needs human approval)” in the web Attack Lab.</Text>
+      )}
+      {approvals.map((a) => (
+        <Card key={a.approval_id} accent={colors.amber}>
+          <View style={styles.head}>
+            <Text style={screen.cardTitle}>{a.tool_name}</Text>
+            <Badge value={a.status} />
+          </View>
+          <Row label="Recipient" value={a.destination || '—'} />
+          <Row label="Resource" value={a.resource || '—'} />
+          <Row label="Arguments" value={Object.entries(a.arguments).map(([k, v]) => `${k}: ${String(v)}`).join('\n')} />
+          <Row label="Policy reason" value={a.reason || '—'} />
+          <Row label="Expires" value={`${formatIso(a.expires_at)} (${timeUntil(a.expires_at)})`} />
+          <Text style={screen.mono}>task {a.task_id.slice(-4)} · args sha256 {a.arguments_hash.slice(0, 12)}…</Text>
           <View style={styles.actions}>
-            <TouchableOpacity style={styles.approveBtn} onPress={() => decide(a.approval_id, 'approve')}>
-              <Text style={styles.btnText}>Approve</Text>
+            <TouchableOpacity
+              accessibilityRole="button"
+              style={[styles.btn, styles.approve, busyId !== null && styles.disabled]}
+              disabled={busyId !== null}
+              onPress={() => decide(a, 'approve')}
+            >
+              <Text style={styles.btnText}>
+                {busyId === a.approval_id ? 'Saving…' : a.destination ? `Approve email to ${a.destination}` : 'Approve this action'}
+              </Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.denyBtn} onPress={() => decide(a.approval_id, 'deny')}>
-              <Text style={styles.btnText}>Deny</Text>
+            <TouchableOpacity
+              accessibilityRole="button"
+              style={[styles.btn, styles.deny, busyId !== null && styles.disabled]}
+              disabled={busyId !== null}
+              onPress={() => decide(a, 'deny')}
+            >
+              <Text style={[styles.btnText, { color: colors.deny }]}>Reject</Text>
             </TouchableOpacity>
           </View>
-        </View>
+        </Card>
       ))}
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F8FAFC', padding: 16 },
-  title: { fontSize: 24, fontWeight: '700', marginBottom: 8 },
-  demo: { fontSize: 11, color: '#D97706', fontWeight: '700', marginBottom: 16 },
-  error: { color: '#DC2626' },
-  msg: { padding: 8, backgroundColor: '#F0FDF4', borderRadius: 6, marginBottom: 8, color: '#166534' },
-  empty: { color: '#64748B', textAlign: 'center', marginTop: 32 },
-  card: { backgroundColor: '#FFF', borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 8, padding: 12, marginBottom: 8 },
-  cardTitle: { fontSize: 15, fontWeight: '600' },
-  mono: { fontFamily: 'monospace', fontSize: 11, color: '#64748B' },
-  actions: { flexDirection: 'row', gap: 8, marginTop: 8 },
-  approveBtn: { backgroundColor: '#16A34A', paddingVertical: 6, paddingHorizontal: 14, borderRadius: 6 },
-  denyBtn: { backgroundColor: '#DC2626', paddingVertical: 6, paddingHorizontal: 14, borderRadius: 6 },
-  btnText: { color: '#FFF', fontWeight: '600', fontSize: 13 },
+  head: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 8 },
+  msg: { padding: 10, borderRadius: 8 },
+  msgOk: { backgroundColor: colors.allowSoft, color: colors.allow },
+  msgBad: { backgroundColor: colors.denySoft, color: colors.deny },
+  actions: { gap: 8, marginTop: 4 },
+  btn: { paddingVertical: 12, paddingHorizontal: 14, borderRadius: 10, alignItems: 'center' },
+  approve: { backgroundColor: colors.allow },
+  deny: { backgroundColor: colors.card, borderWidth: 1, borderColor: '#F0B4B4' },
+  disabled: { opacity: 0.5 },
+  btnText: { color: '#FFF', fontWeight: '700', fontSize: 15 },
 });

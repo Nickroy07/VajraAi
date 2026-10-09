@@ -25,8 +25,8 @@ export function StatusLine({ label, value }: { label: string; value: string }) {
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: '#101828',
-    borderRadius: 12,
+    backgroundColor: '#0B1020',
+    borderRadius: 14,
     padding: 16,
     gap: 8,
     width: '100%',
@@ -34,6 +34,7 @@ const styles = StyleSheet.create({
   line: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+    gap: 12,
   },
   label: {
     color: '#98A2B3',
@@ -43,5 +44,7 @@ const styles = StyleSheet.create({
     color: '#EAECF0',
     fontSize: 14,
     fontWeight: '600',
+    flexShrink: 1,
+    textAlign: 'right',
   },
 });

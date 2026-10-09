@@ -69,6 +69,7 @@ def initialize_sqlite(sqlite_path: str) -> None:
                 created_at TEXT NOT NULL,
                 decided_at TEXT,
                 decided_by TEXT DEFAULT 'system',
+                policy_hash TEXT NOT NULL DEFAULT '',
                 FOREIGN KEY (task_id) REFERENCES tasks(task_id)
             )
             """
@@ -101,9 +102,14 @@ def initialize_sqlite(sqlite_path: str) -> None:
             )
             """
         )
+        # Migrate approvals tables created before policy binding existed
+        cols = {r[1] for r in conn.execute("PRAGMA table_info(approvals)").fetchall()}
+        if "policy_hash" not in cols:
+            conn.execute("ALTER TABLE approvals ADD COLUMN policy_hash TEXT NOT NULL DEFAULT ''")
         conn.commit()
 
         _seed_if_empty(conn)
+        _seed_approval_demo_task(conn)
 
 
 def _seed_if_empty(conn: sqlite3.Connection) -> None:
@@ -165,6 +171,43 @@ def _seed_if_empty(conn: sqlite3.Connection) -> None:
             (tool,),
         )
 
+    conn.commit()
+
+
+APPROVAL_TASK_ID = "00000000-0000-0000-0000-000000000002"
+
+
+def _seed_approval_demo_task(conn: sqlite3.Connection) -> None:
+    """Seed the approval-flow demo task (idempotent, also for older databases)."""
+    now = _utcnow()
+    conn.execute(
+        "INSERT OR IGNORE INTO tasks (task_id, created_at, updated_at, status, description, scope) VALUES (?, ?, ?, ?, ?, ?)",
+        (
+            APPROVAL_TASK_ID,
+            now,
+            now,
+            "running",
+            "Vendor Payment Confirmation — DEMO (human approval)",
+            json.dumps({
+                "allowed_tools": ["read_assigned_invoice", "send_external_email"],
+                "resources": ["invoice-42"],
+                "destination_allowlist": ["billing@acme-corp.example"],
+                "block_external_destinations": True,
+            }),
+        ),
+    )
+    conn.execute(
+        "INSERT OR IGNORE INTO policies (policy_id, task_id, rules, updated_at) VALUES (?, ?, ?, ?)",
+        (
+            "00000000-0000-0000-0000-000000000201",
+            APPROVAL_TASK_ID,
+            json.dumps([
+                {"tool": "read_assigned_invoice", "action": "allow", "description": "Read the assigned invoice resource"},
+                {"tool": "send_external_email", "action": "require_approval", "description": "Emails to the allowlisted vendor need a one-time human approval"},
+            ]),
+            now,
+        ),
+    )
     conn.commit()
 
 

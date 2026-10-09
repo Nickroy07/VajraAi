@@ -1,4 +1,5 @@
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
@@ -11,16 +12,17 @@ from app.api.routes.approvals import router as approvals_router
 from app.api.routes.gateway import router as gateway_router
 from app.api.routes.events import router as events_router
 from app.api.routes.attack_lab import router as attack_lab_router
+from app.api.routes.document_guard import router as document_guard_router
 from app.core.config import get_settings
 from app.database.init_db import initialize_sqlite
 
 settings = get_settings()
-app = FastAPI(title="VAJRA AI Gateway", version="0.2.0")
+app = FastAPI(title="VAJRA AI Gateway", version="0.3.0")
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -40,6 +42,24 @@ async def http_exception_handler(_: Request, exc: HTTPException) -> JSONResponse
                 "code": "http_error",
                 "message": str(exc.detail),
                 "details": {},
+            }
+        },
+    )
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(_: Request, exc: RequestValidationError) -> JSONResponse:
+    errors = [
+        {"field": ".".join(str(p) for p in e.get("loc", [])[1:]), "message": e.get("msg", "")}
+        for e in exc.errors()
+    ]
+    return JSONResponse(
+        status_code=422,
+        content={
+            "error": {
+                "code": "validation_error",
+                "message": "; ".join(f"{e['field']}: {e['message']}" for e in errors) or "Invalid request",
+                "details": {"errors": errors},
             }
         },
     )
@@ -68,3 +88,4 @@ app.include_router(approvals_router)
 app.include_router(gateway_router)
 app.include_router(events_router)
 app.include_router(attack_lab_router)
+app.include_router(document_guard_router)

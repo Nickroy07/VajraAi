@@ -1,47 +1,41 @@
 import { useState } from 'react';
 import { api } from '../services/api';
-import type { ScenarioId, ScenarioResult, TraceStage } from '../types/api';
+import type { GatewayExecuteResponse, ScenarioId, ScenarioResult } from '../types/api';
+import { Badge, PageHeader, ScenarioResultCard, errorText } from '../components/ui';
 
-const SCENARIOS: { id: ScenarioId; label: string; desc: string }[] = [
-  { id: 'authorized_invoice_read', label: 'Authorized Invoice Read', desc: 'Policy allows reading seeded invoice; executor called.' },
-  { id: 'prompt_injection_email', label: 'Prompt Injection → External Email', desc: 'Hostile text + send_external_email → policy denies.' },
-  { id: 'unauthorized_file_delete', label: 'Unauthorized File Delete', desc: 'Delete against protected file → default deny.' },
+const SCENARIOS: { id: ScenarioId; label: string; desc: string; expect: 'allowed' | 'denied' | 'pending_approval' }[] = [
+  { id: 'local_summary', label: 'Local summary', desc: 'Agent writes a summary of its assigned invoice to the local workspace.', expect: 'allowed' },
+  { id: 'prompt_injection_email', label: 'Prompt injection → external email', desc: 'Hidden invoice text tells the agent to email the invoice to external@example.com.', expect: 'denied' },
+  { id: 'unauthorized_file_delete', label: 'Unauthorized file delete', desc: 'Agent tries to delete /etc/critical/config.yaml.', expect: 'denied' },
+  { id: 'authorized_invoice_read', label: 'Authorized invoice read', desc: 'Agent reads invoice-42, the resource assigned to its task.', expect: 'allowed' },
+  { id: 'approval_vendor_email', label: 'Vendor email (needs human approval)', desc: 'Allowlisted vendor recipient; policy requires one-time approval of this exact email.', expect: 'pending_approval' },
 ];
 
-const STATUS_COLORS: Record<string, string> = {
-  allowed: 'var(--color-allow)',
-  denied: 'var(--color-deny)',
-  succeeded: 'var(--color-allow)',
-  skipped: 'var(--color-amber)',
-  failed: 'var(--color-deny)',
-  error: 'var(--color-deny)',
-  info: 'var(--color-muted)',
-};
+const EXPECT_LABEL = { allowed: 'Expect: allowed', denied: 'Expect: blocked', pending_approval: 'Expect: approval' };
 
 export function AttackLabPage() {
   const [results, setResults] = useState<ScenarioResult[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [selectedIds, setSelectedIds] = useState<Set<ScenarioId>>(
-    new Set(SCENARIOS.map((s) => s.id))
+  const [selected, setSelected] = useState<Set<ScenarioId>>(
+    new Set<ScenarioId>(['local_summary', 'prompt_injection_email', 'unauthorized_file_delete']),
   );
 
   const toggle = (id: ScenarioId) => {
-    const next = new Set(selectedIds);
-    if (next.has(id)) next.delete(id); else next.add(id);
-    setSelectedIds(next);
+    const next = new Set(selected);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    setSelected(next);
   };
 
   const run = async () => {
-    if (selectedIds.size === 0) return;
     setLoading(true);
     setError(null);
-    setResults(null);
     try {
-      const data = await api.runAttackLab([...selectedIds] as ScenarioId[]);
-      setResults(data.results);
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Unknown error');
+      const ordered = SCENARIOS.map((s) => s.id).filter((id) => selected.has(id));
+      setResults((await api.runAttackLab(ordered)).results);
+    } catch (e) {
+      setError(errorText(e));
     } finally {
       setLoading(false);
     }
@@ -49,62 +43,108 @@ export function AttackLabPage() {
 
   return (
     <section className="page">
-      <div className="page-header">
-        <h2>Attack Lab</h2>
-        <span className="demo-badge">SIMULATED ATTACK — DEMO ONLY</span>
-      </div>
+      <PageHeader
+        title="Attack Lab"
+        tag="SIMULATED ATTACKS · DEMO"
+        subtitle="Each scenario is a deterministic agent proposal sent through the real backend gateway. Executor deltas are read from the persisted mock-executor counter before and after the call."
+      />
 
-      <p className="note">Each scenario exercises the real gateway enforcement. No real side effects occur.</p>
-
-      <div className="scenario-select">
+      <div className="scenario-grid" role="group" aria-label="Scenarios">
         {SCENARIOS.map((s) => (
-          <label key={s.id} className="scenario-check">
-            <input type="checkbox" checked={selectedIds.has(s.id)} onChange={() => toggle(s.id)} />
+          <label key={s.id} className={`scenario-card ${selected.has(s.id) ? 'selected' : ''}`}>
+            <input type="checkbox" checked={selected.has(s.id)} onChange={() => toggle(s.id)} />
             <div>
-              <strong>{s.label}</strong>
+              <div className="scenario-title">{s.label}</div>
               <p>{s.desc}</p>
+              <Badge value={s.expect} label={EXPECT_LABEL[s.expect]} />
             </div>
           </label>
         ))}
       </div>
 
-      <button className="btn btn-primary" onClick={run} disabled={loading || selectedIds.size === 0}>
-        {loading ? 'Running…' : 'Run Selected Scenarios'}
-      </button>
+      <div className="button-row">
+        <button className="btn btn-primary" onClick={run} disabled={loading || selected.size === 0}>
+          {loading ? 'Running through gateway…' : `Run ${selected.size} scenario${selected.size === 1 ? '' : 's'}`}
+        </button>
+        {selected.size === 0 && <span className="muted">Select at least one scenario.</span>}
+      </div>
 
-      {error && <div className="error-state">Error: {error}</div>}
+      {error && <div className="alert alert-deny" role="alert">{error}</div>}
 
       {results && (
-        <div className="results-section">
+        <div className="results-grid">
           {results.map((r) => (
-            <div key={r.scenario_id} className={`result-card result-${r.final_authorization}`}>
-              <h3>
-                {r.scenario_label}
-                <span className={`badge badge-${r.final_authorization === 'allowed' ? 'allowed' : 'denied'}`}>
-                  {r.final_authorization}
-                </span>
-              </h3>
-              <div className="result-meta">
-                <div><strong>Reason:</strong> {r.authorization_reason}</div>
-                <div><strong>Execution:</strong> {r.execution_status} | <strong>Executor calls:</strong> {r.executor_call_count}</div>
-                <div className="mono"><strong>Event:</strong> {r.event_id}</div>
-              </div>
-
-              <div className="trace-pipeline">
-                {r.trace.map((stage: TraceStage, i: number) => (
-                  <div key={i} className="trace-stage">
-                    <span className="trace-arrow">{i > 0 ? '→' : ''}</span>
-                    <span className="trace-badge" style={{ background: STATUS_COLORS[stage.status] ?? STATUS_COLORS.info }}>
-                      {stage.stage}
-                    </span>
-                    {stage.detail && <span className="trace-detail">{stage.detail}</span>}
-                  </div>
-                ))}
-              </div>
-            </div>
+            <ScenarioResultCard
+              key={r.event_id}
+              result={r}
+              footer={r.final_authorization === 'pending_approval' && r.approval_id ? <ApprovalFollowUp result={r} /> : undefined}
+            />
           ))}
         </div>
       )}
     </section>
+  );
+}
+
+function ApprovalFollowUp({ result }: { result: ScenarioResult }) {
+  const approvalId = result.approval_id!;
+  const [log, setLog] = useState<{ label: string; resp?: GatewayExecuteResponse; error?: string }[]>([]);
+  const [busy, setBusy] = useState(false);
+
+  const step = async (label: string, fn: () => Promise<GatewayExecuteResponse | null>) => {
+    setBusy(true);
+    try {
+      const resp = await fn();
+      setLog((l) => [...l, resp ? { label, resp } : { label }]);
+    } catch (e) {
+      setLog((l) => [...l, { label, error: errorText(e) }]);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const execute = (overrideTo?: string) =>
+    api.gatewayExecute({
+      ...result.request,
+      arguments: overrideTo ? { ...result.request.arguments, to: overrideTo } : result.request.arguments,
+      approval_id: approvalId,
+    });
+
+  return (
+    <div className="followup">
+      <p className="muted">
+        Approve on the phone or the Approvals page (or here), then resubmit. The gateway rechecks the exact request and current policy.
+      </p>
+      <div className="button-row wrap">
+        <button className="btn btn-sm btn-allow" disabled={busy} onClick={() => step('Approved this exact action', async () => { await api.decideApproval(approvalId, 'approve'); return null; })}>
+          Approve
+        </button>
+        <button className="btn btn-sm btn-primary" disabled={busy} onClick={() => step('Execute with approval', () => execute())}>
+          Execute with approval
+        </button>
+        <button className="btn btn-sm btn-secondary" disabled={busy} onClick={() => step('Tampered recipient', () => execute('attacker@evil.example'))}>
+          Try changed recipient
+        </button>
+        <button className="btn btn-sm btn-secondary" disabled={busy} onClick={() => step('Replay same approval', () => execute())}>
+          Replay
+        </button>
+      </div>
+      {log.length > 0 && (
+        <ul className="followup-log">
+          {log.map((entry, i) => (
+            <li key={i}>
+              <strong>{entry.label}</strong>{' '}
+              {entry.resp && (
+                <>
+                  <Badge value={entry.resp.authorization} /> Δ{entry.resp.executor_call_count} · {entry.resp.authorization_reason}
+                </>
+              )}
+              {entry.error && <span className="tone-text-deny">{entry.error}</span>}
+              {!entry.resp && !entry.error && <Badge value="approved" />}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }

@@ -1,42 +1,60 @@
-import { useEffect, useState } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useCallback, useEffect, useState } from 'react';
+import { RefreshControl, ScrollView, Text } from 'react-native';
+import { Badge, Card, Demo, ErrorBox, Row, screen } from '../src/components/ui';
 import { api } from '../src/services/api';
+import type { TaskResponse } from '../src/types/api';
 
 export default function TasksScreen() {
-  const [tasks, setTasks] = useState<any[]>([]);
+  const [tasks, setTasks] = useState<TaskResponse[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
 
-  useEffect(() => {
-    api.getTasks()
-      .then((d: any) => setTasks(d.tasks))
-      .catch((e: Error) => setError(e.message));
+  const load = useCallback(async () => {
+    try {
+      setTasks((await api.getTasks()).tasks);
+      setError(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Unknown error');
+    }
   }, []);
 
-  if (error) return <View style={styles.container}><Text style={styles.error}>Error: {error}</Text></View>;
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await load();
+    setRefreshing(false);
+  };
 
   return (
-    <ScrollView style={styles.container}>
-      <Text style={styles.title}>Tasks</Text>
-      <Text style={styles.demo}>DEMO ENVIRONMENT</Text>
-      {tasks.map((t: any) => (
-        <View key={t.task_id} style={styles.card}>
-          <Text style={styles.cardTitle}>{t.description}</Text>
-          <Text style={styles.mono}>ID: {t.task_id}</Text>
-          <Text>Status: {t.status}</Text>
-          <Text>Allowed Tools: {t.scope?.allowed_tools?.join(', ') || 'none'}</Text>
-          <Text>Resources: {t.scope?.resources?.join(', ') || 'none'}</Text>
-        </View>
+    <ScrollView
+      style={screen.container}
+      contentContainerStyle={screen.content}
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+    >
+      <Demo />
+      {error && <ErrorBox message={error} />}
+      {tasks.map((t) => (
+        <Card key={t.task_id}>
+          <Text style={screen.cardTitle}>{t.description}</Text>
+          <Badge value={t.status === 'running' ? 'allowed' : 'pending'} label={t.status} />
+          <Row label="Allowed tools" value={t.scope.allowed_tools.join(', ') || 'none'} />
+          <Row label="Resources" value={t.scope.resources.join(', ') || 'none'} />
+          <Row
+            label="Destinations"
+            value={
+              t.scope.destination_allowlist.length
+                ? t.scope.destination_allowlist.join(', ')
+                : t.scope.block_external_destinations
+                  ? 'All external destinations blocked'
+                  : 'none'
+            }
+          />
+          <Text style={screen.mono}>{t.task_id}</Text>
+        </Card>
       ))}
     </ScrollView>
   );
 }
-
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F8FAFC', padding: 16 },
-  title: { fontSize: 24, fontWeight: '700', marginBottom: 8 },
-  demo: { fontSize: 11, color: '#D97706', fontWeight: '700', marginBottom: 16 },
-  error: { color: '#DC2626' },
-  card: { backgroundColor: '#FFF', borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 8, padding: 12, marginBottom: 8 },
-  cardTitle: { fontSize: 15, fontWeight: '600' },
-  mono: { fontFamily: 'monospace', fontSize: 11, color: '#64748B' },
-});

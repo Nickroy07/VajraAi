@@ -447,7 +447,7 @@ def test_attack_lab_authorized_invoice_read(client):
     assert result["executor_call_count"] >= 1
     # Check trace stages
     stages = {s["stage"] for s in result["trace"]}
-    assert "Authorization" in stages
+    assert "Decision" in stages
     assert "Mock Executor" in stages
 
 

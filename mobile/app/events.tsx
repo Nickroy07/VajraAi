@@ -1,51 +1,63 @@
-import { useEffect, useState } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useCallback, useEffect, useState } from 'react';
+import { RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Badge, Card, Demo, ErrorBox, screen, toneColor } from '../src/components/ui';
 import { api } from '../src/services/api';
+import type { ApiEvent } from '../src/types/api';
+import { formatIso } from '../src/utils/time';
 
 export default function EventsScreen() {
-  const [events, setEvents] = useState<any[]>([]);
+  const [events, setEvents] = useState<ApiEvent[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
 
-  useEffect(() => {
-    api.getEvents({ limit: '50' })
-      .then((d: any) => setEvents(d.events))
-      .catch((e: Error) => setError(e.message));
+  const load = useCallback(async () => {
+    try {
+      setEvents((await api.getEvents({ limit: '50' })).events);
+      setError(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Unknown error');
+    }
   }, []);
 
-  if (error) return <View style={styles.container}><Text style={styles.error}>Error: {error}</Text></View>;
+  useEffect(() => {
+    load();
+    const id = setInterval(load, 10000);
+    return () => clearInterval(id);
+  }, [load]);
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await load();
+    setRefreshing(false);
+  };
 
   return (
-    <ScrollView style={styles.container}>
-      <Text style={styles.title}>Events</Text>
-      <Text style={styles.demo}>DEMO ENVIRONMENT</Text>
-      {events.map((ev: any) => (
-        <View key={ev.event_id} style={styles.card}>
+    <ScrollView
+      style={screen.container}
+      contentContainerStyle={screen.content}
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+    >
+      <Demo />
+      {error && <ErrorBox message={error} />}
+      {!error && events.length === 0 && <Text style={screen.empty}>No events yet.</Text>}
+      {events.map((ev) => (
+        <Card key={ev.event_id} accent={toneColor(ev.authorization)}>
           <View style={styles.row}>
-            <Text style={styles.cardTitle}>{ev.tool_name || ev.event_type}</Text>
-            <Text style={[styles.badge, ev.authorization === 'allowed' ? styles.allowed : styles.denied]}>
-              {ev.authorization}
-            </Text>
+            <Text style={screen.cardTitle}>{ev.tool_name || ev.event_type}</Text>
+            <Badge value={ev.authorization} />
           </View>
-          <Text style={styles.mono}>{ev.event_id}</Text>
-          <Text>Execution: {ev.execution_status}</Text>
           <Text style={styles.reason}>{ev.authorization_reason}</Text>
-        </View>
+          <Text style={screen.mono}>
+            {formatIso(ev.timestamp)} · execution {ev.execution_status.replace(/_/g, ' ')}
+          </Text>
+          <Text style={screen.mono} selectable>{ev.event_id}</Text>
+        </Card>
       ))}
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F8FAFC', padding: 16 },
-  title: { fontSize: 24, fontWeight: '700', marginBottom: 8 },
-  demo: { fontSize: 11, color: '#D97706', fontWeight: '700', marginBottom: 16 },
-  error: { color: '#DC2626' },
-  card: { backgroundColor: '#FFF', borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 8, padding: 12, marginBottom: 8 },
-  row: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  cardTitle: { fontSize: 14, fontWeight: '600' },
-  mono: { fontFamily: 'monospace', fontSize: 10, color: '#64748B' },
-  badge: { fontSize: 11, fontWeight: '700', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 },
-  allowed: { backgroundColor: '#DCFCE7', color: '#166534' },
-  denied: { backgroundColor: '#FEE2E2', color: '#991B1B' },
-  reason: { fontSize: 11, color: '#64748B', marginTop: 4 },
+  row: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 8 },
+  reason: { fontSize: 14, color: '#141A2A' },
 });
