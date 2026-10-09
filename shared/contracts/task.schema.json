@@ -4,7 +4,7 @@
   "title": "Task",
   "type": "object",
   "additionalProperties": false,
-  "required": ["task_id", "created_at", "status", "description"],
+  "required": ["task_id", "created_at", "updated_at", "status", "description"],
   "properties": {
     "task_id": { "type": "string", "format": "uuid" },
     "created_at": { "type": "string", "format": "date-time" },
@@ -13,12 +13,24 @@
     "description": { "type": "string", "minLength": 1 },
     "scope": {
       "type": "object",
+      "description": "Task-scoped constraints evaluated by policy engine",
       "additionalProperties": false,
       "properties": {
         "allowed_tools": {
-          "type": "array",
-          "items": { "type": "string" },
-          "uniqueItems": true
+          "type": "array", "items": { "type": "string" }, "uniqueItems": true,
+          "description": "Tools this task is permitted to request"
+        },
+        "resources": {
+          "type": "array", "items": { "type": "string" }, "uniqueItems": true,
+          "description": "Resources this task may access"
+        },
+        "destination_allowlist": {
+          "type": "array", "items": { "type": "string" }, "uniqueItems": true,
+          "description": "Allowed external destinations"
+        },
+        "block_external_destinations": {
+          "type": "boolean",
+          "description": "If true, block destinations not in allowlist"
         }
       }
     }

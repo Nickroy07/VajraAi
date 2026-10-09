@@ -4,16 +4,32 @@
   "title": "Audit Event",
   "type": "object",
   "additionalProperties": false,
-  "required": ["event_id", "task_id", "timestamp", "event_type", "status"],
+  "required": ["event_id", "timestamp", "event_type", "authorization", "execution_status"],
   "properties": {
     "event_id": { "type": "string", "format": "uuid" },
     "task_id": { "type": "string", "format": "uuid" },
-    "timestamp": { "type": "string", "format": "date-time" },
+    "agent_id": { "type": "string", "format": "uuid" },
+    "tool_name": { "type": "string" },
     "event_type": {
       "type": "string",
-      "enum": ["task.created", "tool.proposed", "tool.blocked", "tool.approved", "task.completed"]
+      "enum": ["task.created", "tool.proposed", "tool.blocked", "tool.approved", "tool.executed", "task.completed"]
     },
-    "status": { "type": "string", "enum": ["info", "warning", "critical"] },
+    "authorization": {
+      "type": "string",
+      "enum": ["pending", "allowed", "denied"],
+      "description": "Policy decision — server-side enforcement"
+    },
+    "authorization_reason": { "type": "string", "description": "Plain-English reason for decision" },
+    "execution_status": {
+      "type": "string",
+      "enum": ["not_attempted", "succeeded", "failed"],
+      "description": "Actual executor outcome (not_attempted when denied)"
+    },
+    "execution_result": { "type": "string", "description": "Mock executor output" },
+    "arguments": { "type": "object" },
+    "resource": { "type": "string" },
+    "destination": { "type": "string" },
+    "timestamp": { "type": "string", "format": "date-time" },
     "details": { "type": "object" }
   }
 }
