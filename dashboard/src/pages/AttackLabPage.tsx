@@ -88,14 +88,18 @@ export function AttackLabPage() {
 
 function ApprovalFollowUp({ result }: { result: ScenarioResult }) {
   const approvalId = result.approval_id!;
-  const [log, setLog] = useState<{ label: string; resp?: GatewayExecuteResponse; error?: string }[]>([]);
+  type LogResp = Pick<GatewayExecuteResponse, 'authorization' | 'executor_call_count' | 'authorization_reason'>;
+  const [log, setLog] = useState<{ label: string; resp?: LogResp; error?: string }[]>([]);
   const [busy, setBusy] = useState(false);
 
-  const step = async (label: string, fn: () => Promise<GatewayExecuteResponse | null>) => {
+  const step = async (label: string, fn: () => Promise<GatewayExecuteResponse | ScenarioResult | null>) => {
     setBusy(true);
     try {
       const resp = await fn();
-      setLog((l) => [...l, resp ? { label, resp } : { label }]);
+      const norm = resp && 'final_authorization' in resp
+        ? { authorization: resp.final_authorization, executor_call_count: resp.executor_call_count, authorization_reason: resp.authorization_reason }
+        : resp;
+      setLog((l) => [...l, norm ? { label, resp: norm } : { label }]);
     } catch (e) {
       setLog((l) => [...l, { label, error: errorText(e) }]);
     } finally {
@@ -103,17 +107,20 @@ function ApprovalFollowUp({ result }: { result: ScenarioResult }) {
     }
   };
 
-  const execute = (overrideTo?: string) =>
+  // Normal execution uses the server-held approved payload; the tamper button
+  // deliberately resubmits a client-modified recipient to show it is rejected.
+  const execute = () => api.executeApproval(approvalId);
+  const tampered = () =>
     api.gatewayExecute({
       ...result.request,
-      arguments: overrideTo ? { ...result.request.arguments, to: overrideTo } : result.request.arguments,
+      arguments: { ...result.request.arguments, to: 'attacker@evil.example' },
       approval_id: approvalId,
     });
 
   return (
     <div className="followup">
       <p className="muted">
-        Approve on the phone or the Approvals page (or here), then resubmit. The gateway rechecks the exact request and current policy.
+        Approve on the phone, the Approvals page or here, then execute. The server runs only the stored approved action, once, after re-checking expiry, arguments and policy.
       </p>
       <div className="button-row wrap">
         <button className="btn btn-sm btn-allow" disabled={busy} onClick={() => step('Approved this exact action', async () => { await api.decideApproval(approvalId, 'approve'); return null; })}>
@@ -122,7 +129,7 @@ function ApprovalFollowUp({ result }: { result: ScenarioResult }) {
         <button className="btn btn-sm btn-primary" disabled={busy} onClick={() => step('Execute with approval', () => execute())}>
           Execute with approval
         </button>
-        <button className="btn btn-sm btn-secondary" disabled={busy} onClick={() => step('Tampered recipient', () => execute('attacker@evil.example'))}>
+        <button className="btn btn-sm btn-secondary" disabled={busy} onClick={() => step('Tampered recipient', tampered)}>
           Try changed recipient
         </button>
         <button className="btn btn-sm btn-secondary" disabled={busy} onClick={() => step('Replay same approval', () => execute())}>

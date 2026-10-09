@@ -62,7 +62,7 @@ export function OverviewPage({ onNavigate }: { onNavigate: (tab: Tab) => void })
           <Stat label="Allowed" value={metric('Allowed')} tone="allow" />
           <Stat label="Blocked" value={metric('Blocked')} tone="deny" />
           <Stat label="Pending approvals" value={metric('Pending Approvals')} tone="pending" />
-          <Stat label="Mock executor calls" value={data.executor_calls_total} tone="neutral" />
+          <Stat label="Mock executor calls (demo, persisted)" value={data.executor_calls_total} tone="neutral" />
         </div>
       </div>
 

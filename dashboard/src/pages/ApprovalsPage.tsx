@@ -57,6 +57,26 @@ export function ApprovalsPage() {
     }
   };
 
+  const executeApproved = async (a: ApprovalResponse) => {
+    setBusyId(a.approval_id);
+    setFeedback(null);
+    try {
+      const r = await api.executeApproval(a.approval_id);
+      const ran = r.final_authorization === 'allowed';
+      setFeedback({
+        tone: ran ? 'allow' : 'deny',
+        text: ran
+          ? `Executed ${a.tool_name} (mock) once — executor ${r.executor_calls_before} → ${r.executor_calls_after}. Event ${r.event_id}.`
+          : `Gateway denied execution: ${r.authorization_reason} Executor not invoked (Δ ${r.executor_call_count}). Event ${r.event_id}.`,
+      });
+    } catch (e) {
+      setFeedback({ tone: 'deny', text: errorText(e) });
+    } finally {
+      setBusyId(null);
+      load();
+    }
+  };
+
   return (
     <section className="page">
       <PageHeader
@@ -129,6 +149,13 @@ export function ApprovalsPage() {
                     <button className="btn btn-deny" disabled={busyId !== null} onClick={() => decide(a, 'deny')}>
                       Reject
                     </button>
+                  </div>
+                ) : a.status === 'approved' ? (
+                  <div className="button-row">
+                    <button className="btn btn-primary" disabled={busyId !== null} onClick={() => executeApproved(a)}>
+                      {busyId === a.approval_id ? 'Executing…' : 'Execute approved action (mock, once)'}
+                    </button>
+                    <span className="muted">Approved, not yet executed. The gateway re-checks expiry, arguments and policy.</span>
                   </div>
                 ) : (
                   <p className="muted">

@@ -127,6 +127,10 @@ List pending approvals and decide them.
 ```json
 {"decision": "approve"}
 ```
+Approving does **not** execute anything; the approval moves to `approved`.
+
+### `POST /api/v1/approvals/{approval_id}/execute`
+Runs the exact approved action once through the gateway. No request body: the payload comes from server-side approval state (held only while the approval is live, cleared on use/denial/expiry), so the client cannot alter it. The gateway re-checks status, expiry, argument hash, agent and policy fingerprint. Returns a `ScenarioResult` (decision, reason, executor counter before/after, event ID). Pending, denied, expired or already-consumed approvals → `denied`, executor not invoked. Unknown ID → 404.
 
 ---
 

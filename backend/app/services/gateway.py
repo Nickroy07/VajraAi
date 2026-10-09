@@ -143,13 +143,13 @@ class GatewayService:
                     return self._deny(conn, ctx, check["reason"])
                 # Atomic single use: only one request can flip approved → consumed.
                 consumed = conn.execute(
-                    "UPDATE approvals SET status = 'consumed', consumed_at = ? "
-                    "WHERE approval_id = ? AND status = 'approved'",
-                    (_utcnow(), approval_id),
+                    "UPDATE approvals SET status = 'consumed', consumed_at = ?, action_payload = NULL "
+                    "WHERE approval_id = ? AND status = 'approved' AND expires_at > ?",
+                    (_utcnow(), approval_id, _utcnow()),
                 ).rowcount
                 conn.commit()
                 if consumed != 1:
-                    return self._deny(conn, ctx, "Approval has already been consumed")
+                    return self._deny(conn, ctx, "Approval has already been consumed or has expired")
                 reason = f"Human approval {approval_id[:8]} validated for this exact action and consumed"
             elif not decision.allowed:
                 return self._deny(conn, ctx, decision.reason)
@@ -203,12 +203,13 @@ class GatewayService:
             """INSERT INTO approvals
                (approval_id, task_id, agent_id, tool_name, arguments_hash,
                 arguments, resource, destination, reason, status,
-                expires_at, created_at, policy_hash)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)""",
+                expires_at, created_at, policy_hash, action_payload)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?)""",
             (
                 approval_id, ctx["task_id"], ctx["agent_id"], ctx["tool_name"],
                 _hash_arguments(ctx["arguments"]), json.dumps(safe_arguments(ctx["arguments"])),
                 ctx["resource"], ctx["destination"], reason, expires_str, now.isoformat(), fingerprint,
+                canonical_json(ctx["arguments"]),
             ),
         )
         conn.commit()
@@ -258,7 +259,7 @@ class GatewayService:
 
         expires_at = _parse_ts(row["expires_at"])
         if row["status"] in ("pending", "approved") and (expires_at is None or datetime.now(timezone.utc) >= expires_at):
-            conn.execute("UPDATE approvals SET status = 'expired' WHERE approval_id = ?", (row["approval_id"],))
+            conn.execute("UPDATE approvals SET status = 'expired', action_payload = NULL WHERE approval_id = ?", (row["approval_id"],))
             conn.commit()
             return {"valid": False, "reason": "Approval has expired"}
 
@@ -298,7 +299,7 @@ class GatewayService:
         for r in rows:
             ts = _parse_ts(r["expires_at"])
             if ts is None or now >= ts:
-                conn.execute("UPDATE approvals SET status = 'expired' WHERE approval_id = ?", (r["approval_id"],))
+                conn.execute("UPDATE approvals SET status = 'expired', action_payload = NULL WHERE approval_id = ?", (r["approval_id"],))
         conn.commit()
 
     def decide_approval(self, approval_id: str, decision: str, decided_by: str = "operator") -> dict[str, Any] | None:
@@ -314,10 +315,14 @@ class GatewayService:
             if row["status"] != "pending":
                 return dict(row)
 
+            if decision not in ("approve", "deny"):
+                return dict(row)
             new_status = "approved" if decision == "approve" else "denied"
             conn.execute(
-                "UPDATE approvals SET status = ?, decided_at = ?, decided_by = ? WHERE approval_id = ? AND status = 'pending'",
-                (new_status, _utcnow(), decided_by, approval_id),
+                "UPDATE approvals SET status = ?, decided_at = ?, decided_by = ?, "
+                "action_payload = CASE WHEN ? = 'denied' THEN NULL ELSE action_payload END "
+                "WHERE approval_id = ? AND status = 'pending'",
+                (new_status, _utcnow(), decided_by, new_status, approval_id),
             )
             conn.commit()
             updated = conn.execute(
@@ -326,6 +331,34 @@ class GatewayService:
             return dict(updated) if updated else None
         finally:
             conn.close()
+
+    def approved_action_request(self, approval_id: str) -> dict[str, Any] | None:
+        """Rebuild the exact gateway request bound to an approval from server-side state.
+
+        Clients never supply the payload, so an approver cannot alter the action. The
+        gateway re-validates everything (status, expiry, hash, policy) on execution.
+        """
+        conn = self._get_conn()
+        try:
+            self.expire_stale_approvals(conn)
+            row = conn.execute("SELECT * FROM approvals WHERE approval_id = ?", (approval_id,)).fetchone()
+        finally:
+            conn.close()
+        if not row:
+            return None
+        try:
+            arguments = json.loads(row["action_payload"]) if row["action_payload"] else json.loads(row["arguments"])
+        except ValueError:
+            arguments = {}
+        return {
+            "task_id": row["task_id"],
+            "agent_id": row["agent_id"] or "",
+            "tool_name": row["tool_name"],
+            "arguments": arguments,
+            "resource": row["resource"],
+            "destination": row["destination"],
+            "approval_id": approval_id,
+        }
 
     # ------------------------------------------------------------------
     # Event recording helpers

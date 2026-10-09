@@ -7,6 +7,8 @@ from fastapi import APIRouter, HTTPException, Query
 from app.core.config import get_settings
 from app.database.init_db import get_connection
 from app.schemas.approval import ApprovalDecision, ApprovalList, ApprovalResponse
+from app.schemas.attack_lab import ScenarioResult
+from app.services.demo_agent import run_proposal
 from app.services.gateway import get_gateway
 
 router = APIRouter(prefix="/api/v1", tags=["approvals"])
@@ -84,3 +86,21 @@ def decide_approval(approval_id: str, body: ApprovalDecision) -> ApprovalRespons
     ):
         raise HTTPException(status_code=409, detail=f"Approval is already '{result['status']}' and cannot be changed")
     return _to_response(result)
+
+
+@router.post("/approvals/{approval_id}/execute", response_model=ScenarioResult)
+def execute_approved_action(approval_id: str) -> ScenarioResult:
+    """Run the exact approved action through the gateway (single use).
+
+    The action payload comes only from server-side approval state; the gateway
+    re-checks status, expiry, argument hash and policy before the mock executor runs.
+    """
+    settings = get_settings()
+    gateway = get_gateway(settings.sqlite_path)
+    request = gateway.approved_action_request(approval_id)
+    if request is None:
+        raise HTTPException(status_code=404, detail="Approval not found")
+    return ScenarioResult(**run_proposal(
+        gateway, "approved_action", "Approved action", request,
+        f"Executing the action a human approved (approval {approval_id[:8]}).", source="approval",
+    ))

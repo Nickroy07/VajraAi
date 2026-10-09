@@ -106,6 +106,9 @@ def initialize_sqlite(sqlite_path: str) -> None:
         cols = {r[1] for r in conn.execute("PRAGMA table_info(approvals)").fetchall()}
         if "policy_hash" not in cols:
             conn.execute("ALTER TABLE approvals ADD COLUMN policy_hash TEXT NOT NULL DEFAULT ''")
+        # Exact action payload, held server-side only while the approval is live
+        if "action_payload" not in cols:
+            conn.execute("ALTER TABLE approvals ADD COLUMN action_payload TEXT")
         conn.commit()
 
         _seed_if_empty(conn)

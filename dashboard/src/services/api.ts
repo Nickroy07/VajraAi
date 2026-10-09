@@ -17,6 +17,7 @@ import type {
   ScenarioId,
   DocumentScanResponse,
   DocumentAgentRunResponse,
+  ScenarioResult,
 } from '../types/api';
 
 export class ApiError extends Error {
@@ -80,6 +81,9 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ decision }),
     }),
+
+  executeApproval: (approvalId: string) =>
+    request<ScenarioResult>(`/api/v1/approvals/${approvalId}/execute`, { method: 'POST' }),
 
   getEvents: (params?: Record<string, string>) => {
     const qs = params ? '?' + new URLSearchParams(params).toString() : '';

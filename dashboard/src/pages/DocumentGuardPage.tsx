@@ -202,16 +202,31 @@ export function DocumentGuardPage() {
 
       {agentRun && (
         <div className="agent-run">
-          <div className="explain-strip">
-            <div>
-              <Badge value={scan?.risk_level ?? 'review'} label={`Document risk: ${risk?.title ?? '—'}`} />
-              <p>Heuristic signal from Document Guard. It did not decide anything below.</p>
-            </div>
-            <div>
+          <ol className="explain-strip flow-steps">
+            <li>
+              <span className="flow-num">1</span>
+              <Badge value={scan?.risk_level ?? 'review'} label={`Document signal: ${risk?.title ?? '—'}`} />
+              <p>Heuristic only. It decides nothing.</p>
+            </li>
+            <li>
+              <span className="flow-num">2</span>
+              <span className="mono">{agentRun.result.request.tool_name}</span>
+              <p>Agent proposal. {agentRun.agent_rationale}</p>
+            </li>
+            <li>
+              <span className="flow-num">3</span>
               <Badge value={agentRun.result.final_authorization} label={`Gateway: ${humanize(agentRun.result.final_authorization)}`} />
-              <p>Enforced by backend policy for task “Invoice Summary — DEMO”. {agentRun.agent_rationale}</p>
-            </div>
-          </div>
+              <p>{agentRun.result.authorization_reason}</p>
+            </li>
+            <li>
+              <span className="flow-num">4</span>
+              <strong className={agentRun.result.executor_call_count ? 'tone-text-allow' : 'tone-text-deny'}>
+                Executor {agentRun.result.executor_call_count ? 'invoked' : 'NOT invoked'}
+              </strong>
+              <p>Mock counter {agentRun.result.executor_calls_before} → {agentRun.result.executor_calls_after} · event {agentRun.result.event_id.slice(0, 8)}</p>
+            </li>
+          </ol>
+          <p className="muted">Deterministic samples demonstrate the enforcement flow, not general prompt-injection detection accuracy.</p>
           <ScenarioResultCard result={agentRun.result} />
         </div>
       )}
