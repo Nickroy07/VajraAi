@@ -1,14 +1,26 @@
 {
-  "policy_id": "demo-policy-v1",
-  "description": "DEMO DATA: Restrict destructive tools unless explicitly approved.",
+  "policy_id": "demo-policy-v2",
+  "description": "DEMO DATA: Invoice Summary policy — allows read/summary, denies external email and file delete.",
   "rules": [
     {
-      "match": "filesystem.delete",
-      "action": "require_approval"
+      "tool": "read_assigned_invoice",
+      "action": "allow",
+      "description": "Read the assigned invoice resource"
     },
     {
-      "match": "shell.exec",
-      "action": "deny"
+      "tool": "generate_local_summary",
+      "action": "allow",
+      "description": "Generate a local summary from invoice data"
+    },
+    {
+      "tool": "send_external_email",
+      "action": "deny",
+      "description": "External email is not permitted for this task"
+    },
+    {
+      "tool": "delete_file",
+      "action": "deny",
+      "description": "File deletion is not permitted for this task"
     }
   ]
 }

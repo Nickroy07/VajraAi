@@ -1,17 +1,17 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://vajra-ai.dev/contracts/tool-call.schema.json",
-  "title": "Tool Call Proposal",
+  "title": "Tool Call Proposal / Gateway Execution",
   "type": "object",
   "additionalProperties": false,
-  "required": ["proposal_id", "task_id", "timestamp", "tool_name", "status"],
+  "required": ["task_id", "agent_id", "tool_name"],
   "properties": {
-    "proposal_id": { "type": "string", "format": "uuid" },
-    "task_id": { "type": "string", "format": "uuid" },
-    "timestamp": { "type": "string", "format": "date-time" },
-    "tool_name": { "type": "string", "minLength": 1 },
-    "arguments": { "type": "object" },
-    "status": { "type": "string", "enum": ["proposed", "approved", "denied", "executed"] },
-    "reason": { "type": "string" }
+    "task_id": { "type": "string", "format": "uuid", "description": "Task requesting execution" },
+    "agent_id": { "type": "string", "format": "uuid", "description": "Agent making the request" },
+    "tool_name": { "type": "string", "minLength": 1, "description": "Tool to execute" },
+    "arguments": { "type": "object", "description": "Tool arguments" },
+    "resource": { "type": "string", "description": "Target resource" },
+    "destination": { "type": "string", "description": "Target destination (e.g. email address)" },
+    "approval_id": { "type": "string", "format": "uuid", "description": "Pre-approved approval ID, if required" }
   }
 }
