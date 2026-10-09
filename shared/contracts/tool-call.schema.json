@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://vajra-ai.dev/contracts/tool-call.schema.json",
+  "title": "Tool Call Proposal",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["proposal_id", "task_id", "timestamp", "tool_name", "status"],
+  "properties": {
+    "proposal_id": { "type": "string", "format": "uuid" },
+    "task_id": { "type": "string", "format": "uuid" },
+    "timestamp": { "type": "string", "format": "date-time" },
+    "tool_name": { "type": "string", "minLength": 1 },
+    "arguments": { "type": "object" },
+    "status": { "type": "string", "enum": ["proposed", "approved", "denied", "executed"] },
+    "reason": { "type": "string" }
+  }
+}

@@ -1,0 +1,46 @@
+# Environment & secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.crt
+secrets/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+.venv/
+venv/
+
+# Node / frontend
+node_modules/
+dist/
+build/
+.expo/
+.expo-shared/
+
+# Databases
+*.db
+*.sqlite
+*.sqlite3
+
+# Logs and artifacts
+*.log
+logs/
+*.tmp
+
+# IDE/editor
+.vscode/settings.json
+.idea/
+*.swp
+*.swo
+.DS_Store
+*.tsbuildinfo

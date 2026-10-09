@@ -1,0 +1,14 @@
+{
+  "policy_id": "demo-policy-v1",
+  "description": "DEMO DATA: Restrict destructive tools unless explicitly approved.",
+  "rules": [
+    {
+      "match": "filesystem.delete",
+      "action": "require_approval"
+    },
+    {
+      "match": "shell.exec",
+      "action": "deny"
+    }
+  ]
+}
