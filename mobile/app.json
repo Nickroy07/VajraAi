@@ -1,0 +1,13 @@
+{
+  "expo": {
+    "name": "VAJRA AI",
+    "slug": "vajra-ai",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "scheme": "vajraai",
+    "plugins": ["expo-router"],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}

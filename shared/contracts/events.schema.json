@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://vajra-ai.dev/contracts/events.schema.json",
+  "title": "Audit Event",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["event_id", "task_id", "timestamp", "event_type", "status"],
+  "properties": {
+    "event_id": { "type": "string", "format": "uuid" },
+    "task_id": { "type": "string", "format": "uuid" },
+    "timestamp": { "type": "string", "format": "date-time" },
+    "event_type": {
+      "type": "string",
+      "enum": ["task.created", "tool.proposed", "tool.blocked", "tool.approved", "task.completed"]
+    },
+    "status": { "type": "string", "enum": ["info", "warning", "critical"] },
+    "details": { "type": "object" }
+  }
+}
